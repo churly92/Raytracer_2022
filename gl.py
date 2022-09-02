@@ -56,6 +56,8 @@ class Raytracer(object):
         self.camPosition = V3(0,0,0)
 
         self.scene = [ ]
+        self.lights = [ ]
+
 
         self.clearColor = color(0,0,0)
         self.currColor = color(1,1,1)
@@ -93,23 +95,73 @@ class Raytracer(object):
         if (0 <= x < self.width) and (0 <= y < self.height):
             self.pixels[x][y] = clr or self.currColor
 
-    def scene_intersect(self, orig, dir):
-        intersect = False
+    def scene_intersect(self, orig, dir, sceneObj):
+        depth = float('inf')
+        intersect = None
 
         for obj in self.scene:
-            intersect = obj.ray_intersect(orig, dir)
-            if intersect == True:
-                break
+            hit = obj.ray_intersect(orig, dir)
+            if hit != None:
+                if sceneObj != hit.sceneObj:
+                    if hit.distance < depth:
+                        intersect = hit
+                        depth = hit.distance
 
         return intersect
 
     def cast_ray(self, orig, dir):
-        interesect = self.scene_intersect(orig, dir)
+        intersect = self.scene_intersect(orig, dir, None)
 
-        if interesect:
-            return self.currColor
-        else:
+        if intersect == None:
             return None
+
+        material = intersect.sceneObj.material
+
+        finalColor = np.array([0,0,0])
+        objectColor = np.array([material.diffuse[0],
+                                material.diffuse[1],
+                                material.diffuse[2]])
+
+        dirLightColor = np.array([0,0,0])
+        ambLightColor = np.array([0,0,0])
+
+
+        for light in self.lights:
+            if light.lightType == 0: # directional light
+                diffuseColor = np.array([0,0,0])
+
+                light_dir = np.array(light.direction) * -1
+                intensity = np.dot(intersect.normal, light_dir)
+                intensity = float(max(0, intensity))
+
+                diffuseColor = np.array([intensity * light.color[0] * light.intensity,
+                                         intensity * light.color[1] * light.intensity,
+                                         intensity * light.color[2] * light.intensity])
+
+                #Shadows
+                shadow_intensity = 0
+                shadow_intersect = self.scene_intersect(intersect.point, light_dir, intersect.sceneObj)
+                if shadow_intersect:
+                    shadow_intensity = 1
+
+
+                dirLightColor = np.add(dirLightColor, diffuseColor * (1 - shadow_intensity))
+
+            elif light.lightType == 2: # ambient light
+                ambLightColor = np.array(light.color) * light.intensity
+
+        finalColor = dirLightColor + ambLightColor
+
+        finalColor *= objectColor
+
+        r = min(1, finalColor[0])
+        g = min(1, finalColor[1])
+        b = min(1, finalColor[2])
+
+        return (r,g,b)
+
+
+
 
     def glRender(self):
         for y in range(self.vpY, self.vpY + self.vpHeight + 1):
@@ -131,7 +183,8 @@ class Raytracer(object):
 
                 rayColor = self.cast_ray(self.camPosition, direction)
 
-                if rayColor:
+                if rayColor is not None:
+                    rayColor = color(rayColor[0],rayColor[1],rayColor[2])
                     self.glPoint(x, y, rayColor)
 
 
