@@ -1,11 +1,14 @@
 import struct
 from collections import namedtuple
 import numpy as np
+from figures import *
+from lights import *
 from math import cos, sin, tan, pi
 from obj import Obj
 
 
 STEPS = 1
+MAX_RECURSION_DEPTH = 3
 
 V2 = namedtuple('Point2', ['x', 'y'])
 V3 = namedtuple('Point3', ['x', 'y', 'z'])
@@ -59,6 +62,8 @@ class Raytracer(object):
         self.scene = [ ]
         self.lights = [ ]
 
+        self.envMap = None
+
 
         self.clearColor = color(0,0,0)
         self.currColor = color(1,1,1)
@@ -82,9 +87,6 @@ class Raytracer(object):
     def glClear(self):
         self.pixels = [[ self.clearColor for y in range(self.height)]
                          for x in range(self.width)]
-
-
-
 
     def glClearViewport(self, clr = None):
         for x in range(self.vpX, self.vpX + self.vpWidth):
@@ -110,11 +112,16 @@ class Raytracer(object):
 
         return intersect
 
-    def cast_ray(self, orig, dir):
-        intersect = self.scene_intersect(orig, dir, None)
+    def cast_ray(self, orig, dir, sceneObj = None, recursion = 0):
+        intersect = self.scene_intersect(orig, dir, sceneObj)
 
-        if intersect == None:
-            return None
+        if intersect == None or recursion >= MAX_RECURSION_DEPTH:
+            if self.envMap:
+                return self.envMap.getEnvColor(dir)
+            else:
+                return (self.clearColor[0] / 255,
+                        self.clearColor[1] / 255,
+                        self.clearColor[2] / 255)
 
         material = intersect.sceneObj.material
 
@@ -123,10 +130,26 @@ class Raytracer(object):
                                 material.diffuse[1],
                                 material.diffuse[2]])
 
+        if material.matType == OPAQUE:
+            for light in self.lights:
+                diffuseColor = light.getDiffuseColor(intersect, self)
+                specColor = light.getSpecColor(intersect, self)
+                shadowIntensity = light.getShadowIntensity(intersect, self)
 
-        for light in self.lights:
-            finalColor = np.add(finalColor, light.getColor(intersect, self))
+                lightColor = (diffuseColor + specColor) * (1 - shadowIntensity)
 
+                finalColor = np.add(finalColor, lightColor)
+
+        elif material.matType == REFLECTIVE:
+            reflect = reflectVector(intersect.normal, np.array(dir) * -1)
+            reflectColor = self.cast_ray(intersect.point, reflect, intersect.sceneObj, recursion + 1)
+            reflectColor = np.array(reflectColor)
+
+            specColor = np.array([0,0,0])
+            for light in self.lights:
+                specColor = np.add(specColor, light.getSpecColor(intersect, self))
+
+            finalColor = reflectColor + specColor
 
         finalColor *= objectColor
 
@@ -160,10 +183,6 @@ class Raytracer(object):
                 if rayColor is not None:
                     rayColor = color(rayColor[0],rayColor[1],rayColor[2])
                     self.glPoint(x, y, rayColor)
-
-
-
-
 
     def glFinish(self, filename):
         with open(filename, "wb") as file:
