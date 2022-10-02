@@ -8,7 +8,7 @@ from obj import Obj
 
 
 STEPS = 1
-MAX_RECURSION_DEPTH = 3
+MAX_RECURSION_DEPTH = 4
 
 V2 = namedtuple('Point2', ['x', 'y'])
 V3 = namedtuple('Point3', ['x', 'y', 'z'])
@@ -180,7 +180,8 @@ class Raytracer(object):
 
         if material.texture and intersect.texcoords:
             texColor = material.texture.getColor(intersect.texcoords[0], intersect.texcoords[1])
-            finalColor *= np.array(texColor)
+            if texColor is not None:
+                finalColor *= np.array(texColor)
 
         r = min(1, finalColor[0])
         g = min(1, finalColor[1])
